@@ -9,26 +9,46 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "VideoConferenceDriver", "Vi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestStuff", "TestStuff\TestStuff.vcxproj", "{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WebcamParamsTest", "WebcamParamsTest\WebcamParamsTest.vcxproj", "{9B283968-9F09-4C3A-9F51-1DA4C257BF84}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Debug|x64.ActiveCfg = Debug|x64
 		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Debug|x64.Build.0 = Debug|x64
+		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Debug|x86.ActiveCfg = Debug|x64
 		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Release|x64.ActiveCfg = Release|x64
 		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Release|x64.Build.0 = Release|x64
+		{43AD9BF7-E765-48FE-9826-71A8F2CB12DD}.Release|x86.ActiveCfg = Release|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Debug|x64.ActiveCfg = Debug|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Debug|x64.Build.0 = Debug|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Debug|x64.Deploy.0 = Debug|x64
+		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Debug|x86.ActiveCfg = Debug|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Release|x64.ActiveCfg = Release|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Release|x64.Build.0 = Release|x64
 		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Release|x64.Deploy.0 = Release|x64
+		{3098C6BF-E96E-4793-A70E-FB09B741580A}.Release|x86.ActiveCfg = Release|x64
 		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Debug|x64.ActiveCfg = Debug|x64
 		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Debug|x64.Build.0 = Debug|x64
+		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Debug|x86.ActiveCfg = Debug|Win32
+		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Debug|x86.Build.0 = Debug|Win32
 		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Release|x64.ActiveCfg = Release|x64
 		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Release|x64.Build.0 = Release|x64
+		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Release|x86.ActiveCfg = Release|Win32
+		{0DCF04A3-3045-42BA-BA5A-9F5A2A825C52}.Release|x86.Build.0 = Release|Win32
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Debug|x64.ActiveCfg = Debug|x64
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Debug|x64.Build.0 = Debug|x64
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Debug|x86.ActiveCfg = Debug|Win32
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Debug|x86.Build.0 = Debug|Win32
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Release|x64.ActiveCfg = Release|x64
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Release|x64.Build.0 = Release|x64
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Release|x86.ActiveCfg = Release|Win32
+		{9B283968-9F09-4C3A-9F51-1DA4C257BF84}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

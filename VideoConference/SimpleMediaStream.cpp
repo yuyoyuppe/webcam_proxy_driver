@@ -2,6 +2,8 @@
 
 #include "TextureLoader.h"
 
+#include <vector>
+#include <algorithm>
 
 #pragma optimize("", off)
 
@@ -201,6 +203,58 @@ done:
   return hr;
 }
 
+ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
+{
+  std::vector<ComPtr<IMFMediaType>> supported_mtypes;
+
+  auto type_framerate = [](IMFMediaType * type) {
+    UINT32 framerate_num = 0, framerate_denum = 1;
+    MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &framerate_num, &framerate_denum);
+    const float framerate = static_cast<float>(framerate_num) / framerate_denum;
+    return framerate;
+  };
+
+  UINT64 max_resolution = 0;
+  for(DWORD tyIdx = 0;; ++tyIdx)
+  {
+    IMFMediaType * next_type = nullptr;
+    HRESULT hr = reader->GetNativeMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, tyIdx, &next_type);
+    if(hr == MF_E_NO_MORE_TYPES || FAILED(hr) || !next_type)
+    {
+      break;
+    }
+
+    constexpr float minimal_acceptable_framerate = 15.f;
+    // Skip low frame types
+    if(type_framerate(next_type) < minimal_acceptable_framerate)
+    {
+      continue;
+    }
+
+    UINT32 w = 0, h = 0;
+    MFGetAttributeSize(next_type, MF_MT_FRAME_SIZE, &w, &h);
+    const UINT64 cur_resolution_mult = static_cast<UINT64>(w) * h;
+    if(cur_resolution_mult >= max_resolution)
+    {
+      supported_mtypes.emplace_back(next_type);
+      max_resolution = cur_resolution_mult;
+    }
+
+  }
+  // Remove all types with non-optimal resolution
+  supported_mtypes.erase(std::remove_if(begin(supported_mtypes), end(supported_mtypes), [max_resolution](ComPtr<IMFMediaType> & ptr) {
+    UINT32 w = 0, h = 0;
+    MFGetAttributeSize(ptr.Get(), MF_MT_FRAME_SIZE, &w, &h);
+    const UINT64 cur_resolution_mult = static_cast<UINT64>(w) * h;
+    return cur_resolution_mult != max_resolution;
+    }), end(supported_mtypes));
+
+  // Desc-sort by frame_rate
+  std::sort(begin(supported_mtypes), end(supported_mtypes), [type_framerate](ComPtr<IMFMediaType> & lhs, ComPtr<IMFMediaType> & rhs) {
+    return type_framerate(lhs.Get()) > type_framerate(rhs.Get());
+    });
+  return std::move(supported_mtypes[0]);
+}
 
 HRESULT
 SimpleMediaStream::RuntimeClassInitialize(
@@ -218,27 +272,16 @@ SimpleMediaStream::RuntimeClassInitialize(
     RETURN_IF_FAILED (pSource->QueryInterface(IID_PPV_ARGS(&_parent)));
 
     // Initialize media type and set the video output media type.
-    RETURN_IF_FAILED (MFCreateMediaType(&_spMediaType));
-    _spMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-    _spMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
-    _spMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-    _spMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
-    const auto w = 640;
-    const auto h = 480;
-    MFSetAttributeSize(_spMediaType.Get(), MF_MT_FRAME_SIZE, w, h);
-    MFSetAttributeRatio(_spMediaType.Get(), MF_MT_FRAME_RATE, 30, 1);
-    MFSetAttributeRatio(_spMediaType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
-
-    RETURN_IF_FAILED (MFCreateAttributes(&_spAttributes, 10));
-    RETURN_IF_FAILED (this->_SetStreamAttributes(_spAttributes.Get()));
-    RETURN_IF_FAILED (MFCreateEventQueue(&_spEventQueue));
-
-    // Initialize stream descriptors
-    RETURN_IF_FAILED (MFCreateStreamDescriptor(0, 1, _spMediaType.GetAddressOf(), &_spStreamDesc));
-
-    RETURN_IF_FAILED (_spStreamDesc->GetMediaTypeHandler(&spTypeHandler));
-    RETURN_IF_FAILED (spTypeHandler->SetCurrentMediaType(_spMediaType.Get()));
-    RETURN_IF_FAILED (this->_SetStreamDescriptorAttributes(_spStreamDesc.Get()));
+    //RETURN_IF_FAILED (MFCreateMediaType(&_spMediaType));
+    //_spMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+    //_spMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
+    //_spMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+    //_spMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
+    //const auto w = 640;
+    //const auto h = 480;
+    //MFSetAttributeSize(_spMediaType.Get(), MF_MT_FRAME_SIZE, w, h);
+    //MFSetAttributeRatio(_spMediaType.Get(), MF_MT_FRAME_RATE, 30, 1);
+    //MFSetAttributeRatio(_spMediaType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
 
     _devices.Clear();
     _devices.EnumerateDevices();
@@ -283,7 +326,18 @@ SimpleMediaStream::RuntimeClassInitialize(
           realSource,
           pAttributes,
           &m_pReader);
-        ConfigureSourceReader(m_pReader);
+        _spMediaType = SelectBestMediaType(m_pReader);
+        RETURN_IF_FAILED(MFCreateAttributes(&_spAttributes, 10));
+        RETURN_IF_FAILED(this->_SetStreamAttributes(_spAttributes.Get()));
+        RETURN_IF_FAILED(MFCreateEventQueue(&_spEventQueue));
+
+        // Initialize stream descriptors
+        RETURN_IF_FAILED(MFCreateStreamDescriptor(0, 1, _spMediaType.GetAddressOf(), &_spStreamDesc));
+
+        RETURN_IF_FAILED(_spStreamDesc->GetMediaTypeHandler(&spTypeHandler));
+        RETURN_IF_FAILED(spTypeHandler->SetCurrentMediaType(_spMediaType.Get()));
+        RETURN_IF_FAILED(this->_SetStreamDescriptorAttributes(_spStreamDesc.Get()));
+        m_pReader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, _spMediaType.Get());
       }
 
       SafeRelease(&pAttributes);
