@@ -253,6 +253,7 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
   std::sort(begin(supported_mtypes), end(supported_mtypes), [type_framerate](ComPtr<IMFMediaType> & lhs, ComPtr<IMFMediaType> & rhs) {
     return type_framerate(lhs.Get()) > type_framerate(rhs.Get());
     });
+
   return std::move(supported_mtypes[0]);
 }
 
@@ -270,18 +271,6 @@ SimpleMediaStream::RuntimeClassInitialize(
         return E_INVALIDARG;
     }
     RETURN_IF_FAILED (pSource->QueryInterface(IID_PPV_ARGS(&_parent)));
-
-    // Initialize media type and set the video output media type.
-    //RETURN_IF_FAILED (MFCreateMediaType(&_spMediaType));
-    //_spMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-    //_spMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2);
-    //_spMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-    //_spMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
-    //const auto w = 640;
-    //const auto h = 480;
-    //MFSetAttributeSize(_spMediaType.Get(), MF_MT_FRAME_SIZE, w, h);
-    //MFSetAttributeRatio(_spMediaType.Get(), MF_MT_FRAME_RATE, 30, 1);
-    //MFSetAttributeRatio(_spMediaType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
 
     _devices.Clear();
     _devices.EnumerateDevices();
@@ -497,32 +486,16 @@ WriteSampleData(
         return E_INVALIDARG;
     }
 
-    const int NUM_ROWS = len / abs(pitch);
+    const int height = len / abs(pitch);
 
-    static const auto image = LoadImageFromFile(LR"(P:\wecam_test.jpg)");
-
-
-
-    const bool shouldShowNoise = true;
-    if(!shouldShowNoise && image)
+    static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", LoadedImage::Format::MJPG);
+    if(!image)
     {
-        memcpy(pBuf, image->buffer.get(), len);
+      return E_FAIL;
     }
-    else
-    {
-      LONGLONG curSysTimeInS = MFGetSystemTime() / (MFTIME)1000000;
-      int offset = (curSysTimeInS % NUM_ROWS) * 10;
-
-      for (int r = 0; r < NUM_ROWS; r++)
-      {
-          int grayColor = r + offset;
-          for(int i = 0; i < pitch; ++i)
-          {
-            pBuf[r * pitch + i] = rand() % 255;
-          }
-      }
-    }
-
+    for(int y = 0; y < height; ++y)
+      memcpy(pBuf, (const void*)&image->buffer[y * image->pitch], min(pitch, image->pitch));
+    
     return S_OK;
 }
 
@@ -568,28 +541,77 @@ SimpleMediaStream::RequestSample(
 
     ComPtr<IMFSample> sourceSample;
     DWORD streamFlags = 0;
-    hr = m_pReader->ReadSample(
+    // TODO: handle many failed tries etc.
+    while(!sourceSample)
+    {
+      hr = m_pReader->ReadSample(
       (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
       0,
       NULL,
       &streamFlags,
       NULL,
       &sourceSample);
+      Sleep(200);
+    }
+
+    // Debug: save frame to a file for further inspection.
+    //static bool raw_source_saved = false;
+    //if(!raw_source_saved)
+    //{
+    //  ComPtr<IMFMediaBuffer> buf;
+    //  RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &buf));
+    //  BYTE * buff = nullptr;
+    //  DWORD max_length = 0, current_length = 0;
+    //  RETURN_IF_FAILED(buf->Lock(&buff, &max_length, &current_length));
+    //  FILE * f = nullptr;
+    //  fopen_s(&f, R"(R:\meh.jpg)", "wb");
+    //  fwrite(buff, current_length, 1, f);
+    //  fclose(f);
+    //  RETURN_IF_FAILED(buf->Unlock());
+    //  RETURN_IF_FAILED(buf->SetCurrentLength(current_length));
+    //  raw_source_saved = true;
+    //}
+
+    ComPtr<IMFMediaBuffer> sourceSampleBuffer;
+    RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &sourceSampleBuffer));
+    GUID sourceSubtype = {};
+    RETURN_IF_FAILED(_spMediaType->GetGUID(MF_MT_SUBTYPE, &sourceSubtype));
+    UINT32 sourceFourCC = *((DWORD*)&sourceSubtype);
 
     RETURN_IF_FAILED (MFCreateSample(&sample));
-    RETURN_IF_FAILED (MFCreate2DMediaBuffer(NUM_IMAGE_COLS,
-                                            NUM_IMAGE_ROWS,
-      D3DFMT_A8B8G8R8,
+    UINT32 sampleWidth = 0;
+    UINT32 sampleHeight = 0;
+    MFGetAttributeSize(_spMediaType.Get(), MF_MT_FRAME_SIZE, &sampleWidth, &sampleHeight);
+
+    RETURN_IF_FAILED (MFCreate2DMediaBuffer(sampleWidth,
+                                            sampleHeight,
+                                            (D3DFORMAT)sourceFourCC,
                                             false,
                                             &outputBuffer));
-    RETURN_IF_FAILED (outputBuffer.As(&buffer2D));
-    RETURN_IF_FAILED (buffer2D->Lock2DSize(MF2DBuffer_LockFlags_Write,
-                                           &pbuf,
-                                           &pitch,
-                                           &bufferStart,
-                                           &bufferLength));
-    RETURN_IF_FAILED (WriteSampleData(pbuf, pitch, bufferLength));
-    RETURN_IF_FAILED (buffer2D->Unlock2D());
+
+    if(!memcmp(&sourceSubtype, &MFVideoFormat_MJPG, sizeof(GUID)))
+    {
+      // It's MJPG, so we do not copy line by line and copy the whole buffer at once
+      BYTE * outBuf = nullptr;
+      DWORD maxLength = 0;
+      DWORD curLength = 0;
+      outputBuffer->Lock(&outBuf, &maxLength, &curLength);
+      static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", LoadedImage::Format::MJPG);
+      memcpy(outBuf, &image->buffer[0], image->buffer.size());
+      outputBuffer->Unlock();
+    }
+    else
+    {
+      RETURN_IF_FAILED (outputBuffer.As(&buffer2D));
+      RETURN_IF_FAILED (buffer2D->Lock2DSize(MF2DBuffer_LockFlags_Write,
+                                             &pbuf,
+                                             &pitch,
+                                             &bufferStart,
+                                             &bufferLength));
+      RETURN_IF_FAILED (WriteSampleData(pbuf, pitch, bufferLength));
+      RETURN_IF_FAILED (buffer2D->Unlock2D());
+    }
+    
     RETURN_IF_FAILED (sample->AddBuffer(outputBuffer.Get()));
     RETURN_IF_FAILED (sample->SetSampleTime(MFGetSystemTime()));
     RETURN_IF_FAILED (sample->SetSampleDuration(333333));
@@ -633,12 +655,42 @@ SimpleMediaStream::RequestSample(
     }();
 
     const bool disableWebcam = noiseToggle && *noiseToggle;
-    if(sourceSample && !disableWebcam)
+
+    if(!disableWebcam && sourceSample)
     {
       RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
         GUID_NULL,
         S_OK,
         sourceSample.Get()));
+    }
+    else if(sourceSample)
+    {
+      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
+        GUID_NULL,
+        S_OK,
+        sample.Get()));
+
+      // Noise for debugging
+      /*ComPtr<IMFMediaBuffer> buf; 
+      RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &buf));
+      BYTE * buff = nullptr;
+      DWORD max_length = 0, current_length = 0;
+      RETURN_IF_FAILED(buf->Lock(&buff, &max_length, &current_length));
+      static DWORD strt = 500;
+      static DWORD length = 10;
+      for(DWORD i = strt; i < current_length && i < (strt + length); ++i)
+      {
+        if(i % 4 == 0)
+        {
+          buff[i] = rand() % 255;
+        }
+      }
+      RETURN_IF_FAILED(buf->Unlock());
+      RETURN_IF_FAILED(buf->SetCurrentLength(current_length));
+      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
+        GUID_NULL,
+        S_OK,
+        sourceSample.Get()));*/
     }
     else
     {

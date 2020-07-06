@@ -22,7 +22,7 @@
     <None Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="SimpleMediaSourceDriver.inf">
+    <Inf Include="VideoConferenceDriver.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
@@ -50,7 +50,7 @@
     <ClCompile Include="Driver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-   <ClCompile Include="Queue.c">
+    <ClCompile Include="Queue.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

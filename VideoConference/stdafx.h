@@ -4,8 +4,9 @@
 //
 
 #pragma once
+#ifndef UNICODE
 #define UNICODE
-
+#endif
 // Windows Header Files:
 #include <windows.h>
 #include <propvarutil.h>

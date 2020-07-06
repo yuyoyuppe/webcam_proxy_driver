@@ -5,6 +5,7 @@
 #include <memory>
 #include <string_view>
 #include <optional>
+#include <vector>
 
 #pragma warning(push)
 #pragma warning(disable : 4005)
@@ -28,19 +29,26 @@ HRESULT CreateWICTextureFromFile(_In_ ID3D11Device * d3dDevice,
   _In_ size_t maxsize = 0
 );
 
+
 struct LoadedImage
 {
-  std::unique_ptr<const uint8_t[]> buffer;
+  std::vector<uint8_t> buffer;
   size_t pitch; 
   size_t bpp;
   size_t width;
   size_t height;
+  enum class Format
+  {
+    YUV,
+    MJPG,
+    NV12
+  } format;
 };
 
-std::optional<LoadedImage> LoadImageFromFile(std::wstring_view fileName);
+std::optional<LoadedImage> LoadImageFromFile(std::wstring_view fileName, const LoadedImage::Format targetFormat);
 
-#define NUM_IMAGE_ROWS 320
-#define NUM_IMAGE_COLS 240
+#define NUM_IMAGE_COLS 320
+#define NUM_IMAGE_ROWS 240
 #define BYTES_PER_PIXEL 4
 #define IMAGE_BUFFER_SIZE_BYTES (NUM_IMAGE_ROWS * NUM_IMAGE_COLS * BYTES_PER_PIXEL)
 #define IMAGE_ROW_SIZE_BYTES (NUM_IMAGE_COLS * BYTES_PER_PIXEL)
