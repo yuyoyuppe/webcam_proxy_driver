@@ -8,8 +8,7 @@
 #include <vector>
 
 #include <wrl/client.h>
-#include <mfidl.h>
-#include <mfreadwrite.h>
+#include <Mfidl.h>
 
 #pragma warning(push)
 #pragma warning(disable : 4005)

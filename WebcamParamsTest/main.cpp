@@ -12,7 +12,7 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader);
 
 int main()
 {
-  CoInitialize(nullptr);
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
   MFStartup(MF_VERSION);
 
   DeviceList dl;
@@ -22,14 +22,14 @@ int main()
   IMFActivate * activate = nullptr;
   dl.GetDevice(0, &activate);
 
-  IMFMediaSource * pSource = NULL;
+  IMFMediaSource * pSource = nullptr;
 
   // Create the media source for the device.
   HRESULT hr = activate->ActivateObject(
     __uuidof(IMFMediaSource),
     (void **)&pSource);
 
-  IMFAttributes * pAttributes = NULL;
+  IMFAttributes * pAttributes = nullptr;
 
   hr = MFCreateAttributes(&pAttributes, 2);
 
@@ -53,5 +53,6 @@ int main()
 
   const auto imageSample = LoadImageAsSample(LR"(P:\wecam_test_1920.jpg)", webcamNativeMediaType.Get());
 
+  MFShutdown();
   return 0;
 }
