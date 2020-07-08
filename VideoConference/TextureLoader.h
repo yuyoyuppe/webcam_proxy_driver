@@ -7,6 +7,10 @@
 #include <optional>
 #include <vector>
 
+#include <wrl/client.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+
 #pragma warning(push)
 #pragma warning(disable : 4005)
 #include <stdint.h>
@@ -29,13 +33,4 @@ HRESULT CreateWICTextureFromFile(_In_ ID3D11Device * d3dDevice,
   _In_ size_t maxsize = 0
 );
 
-
-struct LoadedMJPG
-{
-  std::vector<uint8_t> buffer;
-  size_t bufferSize;
-  UINT width;
-  UINT height;
-};
-
-std::optional<LoadedMJPG> LoadImageAsSample(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight);
+Microsoft::WRL::ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * outputSampleMediaType);

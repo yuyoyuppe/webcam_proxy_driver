@@ -606,9 +606,9 @@ SimpleMediaStream::RequestSample(
       DWORD maxLength = 0;
       DWORD curLength = 0;
       outputBuffer->Lock(&outBuf, &maxLength, &curLength);
-      static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", sampleWidth, sampleHeight);
-      memcpy(outBuf, &image->buffer[0], image->buffer.size());
-      outputBuffer->Unlock();
+      //static const auto image = LoadImageAsSample(LR"(P:\wecam_test_1920.jpg)", sampleWidth, sampleHeight);
+      //memcpy(outBuf, &image->buffer[0], image->buffer.size());
+      //outputBuffer->Unlock();
     }
     else
     {

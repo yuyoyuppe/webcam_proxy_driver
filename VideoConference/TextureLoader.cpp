@@ -672,21 +672,27 @@ HRESULT CreateWICTextureFromFile(_In_ ID3D11Device * d3dDevice,
 #define RETURN_IF_FAILED( val )                                                     \
     if ( FAILED( val ) )                                                            \
     {                                                                               \
-        return std::nullopt;                                                        \
+        return nullptr;                                                        \
     }
 
-std::optional<LoadedMJPG> LoadImageAsSample(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight)
+using Microsoft::WRL::ComPtr;
+
+ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * sampleMediaType)
 {
+    UINT targetWidth = 0;
+    UINT targetHeight = 0;
+    RETURN_IF_FAILED(MFGetAttributeSize(sampleMediaType, MF_MT_FRAME_SIZE, &targetWidth, &targetHeight));
+
     IWICImagingFactory * pWIC = _GetWIC();
     if(!pWIC)
     {
-        return std::nullopt;
+        return nullptr;
     }
-    winrt::com_ptr<IWICBitmapDecoder> decoder;
-    RETURN_IF_FAILED(pWIC->CreateDecoderFromFilename(fileName.data(), 0, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.put()));
+    winrt::com_ptr<IWICBitmapDecoder> bitmapDecoder;
+    RETURN_IF_FAILED(pWIC->CreateDecoderFromFilename(fileName.data(), 0, GENERIC_READ, WICDecodeMetadataCacheOnDemand, bitmapDecoder.put()));
 
     winrt::com_ptr<IWICBitmapFrameDecode> decodedFrame;
-    RETURN_IF_FAILED(decoder->GetFrame(0, decodedFrame.put()));
+    RETURN_IF_FAILED(bitmapDecoder->GetFrame(0, decodedFrame.put()));
     
     UINT imageWidth = 0, imageHeight = 0;
     RETURN_IF_FAILED(decodedFrame->GetSize(&imageWidth, &imageHeight));
@@ -732,11 +738,96 @@ std::optional<LoadedMJPG> LoadImageAsSample(std::wstring_view fileName, const UI
     const size_t jpgStreamSize = jpgStreamStat.cbSize.QuadPart;
     HGLOBAL streamMemoryHandle{};
     RETURN_IF_FAILED(GetHGlobalFromStream(jpgStream.get(), &streamMemoryHandle));
-    auto memory = static_cast<uint8_t *>(GlobalLock(streamMemoryHandle));
-    std::vector<uint8_t> buffer;
-    buffer.resize(jpgStreamSize);
-    std::copy(memory, memory + jpgStreamSize, buffer.data());
+    auto jpgStreamMemory = static_cast<uint8_t *>(GlobalLock(streamMemoryHandle));
 
-    LoadedMJPG result{.buffer = std::move(buffer), .bufferSize = jpgStreamSize, .width = targetWidth, .height = targetHeight};
-    return std::optional<LoadedMJPG>{std::move(result)};
+    MFT_REGISTER_TYPE_INFO inputFilter = {MFMediaType_Video, MFVideoFormat_MJPG};
+    MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, {}};
+    RETURN_IF_FAILED(sampleMediaType->GetGUID(MF_MT_SUBTYPE, &outputFilter.guidSubtype));
+
+    IMFActivate ** ppActivate = NULL;
+    UINT32 count = 0;
+
+    // Find a suitable encoder
+    HRESULT r = MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SYNCMFT, &inputFilter, &outputFilter, &ppActivate, &count);
+    ComPtr<IMFTransform> decoder;
+
+    bool activated = false;
+    for(UINT32 i = 0; i < count; ++i)
+    {
+      if(!activated && !FAILED(ppActivate[i]->ActivateObject(IID_PPV_ARGS(&decoder))))
+      {
+        activated = true;
+      }
+      ppActivate[i]->Release();
+    }
+    CoTaskMemFree(ppActivate);
+    if(!activated)
+    {
+      return nullptr;
+    }
+
+    // Set input/output types for the encoder
+    ComPtr<IMFMediaType> jpgFrameMediaType;
+    RETURN_IF_FAILED(MFCreateMediaType(&jpgFrameMediaType));
+    RETURN_IF_FAILED(jpgFrameMediaType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+    RETURN_IF_FAILED(jpgFrameMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_MJPG));
+    RETURN_IF_FAILED(jpgFrameMediaType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+    RETURN_IF_FAILED(jpgFrameMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
+    RETURN_IF_FAILED(MFSetAttributeSize(jpgFrameMediaType.Get(), MF_MT_FRAME_SIZE, targetWidth, targetHeight));
+    RETURN_IF_FAILED(MFSetAttributeRatio(jpgFrameMediaType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+    RETURN_IF_FAILED(decoder->SetInputType(0, jpgFrameMediaType.Get(), 0));
+    RETURN_IF_FAILED(decoder->SetOutputType(0, sampleMediaType, 0));
+
+    // Create a sample from the input image buffer
+    ComPtr<IMFSample> inputSample;
+    RETURN_IF_FAILED(MFCreateSample(&inputSample));
+
+    IMFMediaBuffer * inputMediaBuffer = nullptr;
+    RETURN_IF_FAILED(MFCreateAlignedMemoryBuffer(static_cast<DWORD>(jpgStreamSize), MF_64_BYTE_ALIGNMENT, &inputMediaBuffer));
+    BYTE * inputBuf = nullptr;
+    DWORD max_length = 0, current_length = 0;
+    RETURN_IF_FAILED(inputMediaBuffer->Lock(&inputBuf, &max_length, &current_length));
+    if(max_length < jpgStreamSize)
+    {
+      return nullptr;
+    }
+    std::copy(jpgStreamMemory, jpgStreamMemory + jpgStreamSize, inputBuf);
+    RETURN_IF_FAILED(inputMediaBuffer->Unlock());
+    RETURN_IF_FAILED(inputMediaBuffer->SetCurrentLength(static_cast<DWORD>(jpgStreamSize)));
+    RETURN_IF_FAILED(inputSample->AddBuffer(inputMediaBuffer));
+
+    // Process the input sample
+    RETURN_IF_FAILED(decoder->ProcessInput(0, inputSample.Get(), 0));
+
+    // Check whether we need to allocate output sample and buffer ourselves
+    MFT_OUTPUT_STREAM_INFO outputStreamInfo{};
+    RETURN_IF_FAILED(decoder->GetOutputStreamInfo(0, &outputStreamInfo));
+    const bool onlyProvidesSamples = outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
+    const bool canProvideSamples = outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES;
+    const bool mustAllocateSample = (!onlyProvidesSamples && !canProvideSamples)
+      || (!onlyProvidesSamples && (outputStreamInfo.dwFlags & MFT_PROCESS_OUTPUT_DISCARD_WHEN_NO_BUFFER));
+
+    MFT_OUTPUT_DATA_BUFFER outputSamples{};
+    IMFSample * outputSample = nullptr;
+
+    // If so, do the allocation
+    if(mustAllocateSample)
+    {
+      RETURN_IF_FAILED(MFCreateSample(&outputSample));
+      RETURN_IF_FAILED(outputSample->SetSampleDuration(333333));
+      IMFMediaBuffer * outputMediaBuffer = nullptr;
+      RETURN_IF_FAILED(MFCreateAlignedMemoryBuffer(outputStreamInfo.cbSize, outputStreamInfo.cbAlignment - 1, &outputMediaBuffer));
+      RETURN_IF_FAILED(outputMediaBuffer->SetCurrentLength(outputStreamInfo.cbSize));
+      RETURN_IF_FAILED(outputSample->AddBuffer(outputMediaBuffer));
+      outputSamples.pSample = outputSample;
+    }
+
+    // Finally, produce the output sample 
+    DWORD processStatus = 0;
+    RETURN_IF_FAILED(decoder->ProcessOutput(0, 1, &outputSamples, &processStatus));
+    if(outputSamples.pEvents)
+    {
+      outputSamples.pEvents->Release();
+    }
+    return ComPtr<IMFSample>{outputSamples.pSample};
 }
