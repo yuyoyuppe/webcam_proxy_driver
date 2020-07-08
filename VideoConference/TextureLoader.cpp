@@ -675,7 +675,7 @@ HRESULT CreateWICTextureFromFile(_In_ ID3D11Device * d3dDevice,
         return std::nullopt;                                                        \
     }
 
-std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight)
+std::optional<LoadedMJPG> LoadImageAsSample(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight)
 {
     IWICImagingFactory * pWIC = _GetWIC();
     if(!pWIC)
@@ -737,6 +737,6 @@ std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UI
     buffer.resize(jpgStreamSize);
     std::copy(memory, memory + jpgStreamSize, buffer.data());
 
-    LoadedMJPG result{.buffer = std::move(buffer), .bufferSize = jpgStreamSize, .width = imageWidth, .height = imageHeight};
+    LoadedMJPG result{.buffer = std::move(buffer), .bufferSize = jpgStreamSize, .width = targetWidth, .height = targetHeight};
     return std::optional<LoadedMJPG>{std::move(result)};
 }

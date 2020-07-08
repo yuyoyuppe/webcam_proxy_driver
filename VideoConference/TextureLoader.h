@@ -34,8 +34,8 @@ struct LoadedMJPG
 {
   std::vector<uint8_t> buffer;
   size_t bufferSize;
-  size_t width;
-  size_t height;
+  UINT width;
+  UINT height;
 };
 
-std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight);
+std::optional<LoadedMJPG> LoadImageAsSample(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight);

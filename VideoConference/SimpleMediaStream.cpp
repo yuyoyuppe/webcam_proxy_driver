@@ -219,11 +219,10 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
   {
     IMFMediaType * next_type = nullptr;
     HRESULT hr = reader->GetNativeMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, tyIdx, &next_type);
-    if(hr == MF_E_NO_MORE_TYPES || FAILED(hr) || !next_type)
+    if(!next_type)
     {
-      break;
+       break;
     }
-
     // DEBUG: skip all but yuy2 
     GUID subtype{};
     next_type->GetGUID(MF_MT_SUBTYPE, &subtype);
@@ -244,6 +243,11 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
     {
       supported_mtypes.emplace_back(next_type);
       max_resolution = cur_resolution_mult;
+    }
+
+    if(hr == MF_E_NO_MORE_TYPES || FAILED(hr))
+    {
+      break;
     }
   }
 
