@@ -107,16 +107,48 @@ int main()
   auto type = SelectBestMediaType(reader);
 
 
-  static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", LoadedImage::Format::MJPG);
+  static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", 1920, 1080);
+  FILE * f{};
+  _wfopen_s(&f, LR"(R:\reencoded.jpg)", L"wb");
+  fwrite(image->buffer.data(), image->bufferSize, 1, f);
+  fclose(f);
 
-  MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, MFVideoFormat_MJPG};
-  MFT_REGISTER_TYPE_INFO inputFilter = {MFMediaType_Video, MFVideoFormat_YUY2};
+  
+  MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, MFVideoFormat_YUY2};
+  //MFT_REGISTER_TYPE_INFO inputFilter = {MFMediaType_Video, };
   UINT32 unFlags = MFT_ENUM_FLAG_ALL;
 
   IMFActivate ** ppActivate = NULL;
   UINT32 count = 0;
 
-  HRESULT r = MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, unFlags, nullptr, &outputFilter, &ppActivate, &count);
+  HRESULT r = MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, unFlags, nullptr, &outputFilter, &ppActivate, &count);
+  std::vector<ComPtr<IMFMediaType>> supportedInputTypes;
+  for(UINT32 i = 0; i < count; ++i)
+  {
+      ComPtr<IMFTransform> decoder;
+      ppActivate[i]->ActivateObject(IID_PPV_ARGS(&decoder));
+      /*decoder->GetInputAvailableType(0,);*/
+      for(DWORD tyIdx = 0;; ++tyIdx)
+      {
+        ComPtr<IMFMediaType> next_type;
+        HRESULT hr = decoder->GetInputAvailableType(0, tyIdx, &next_type);
+        if(next_type)
+          supportedInputTypes.emplace_back(std::move(next_type));
+        if(hr == MF_E_NO_MORE_TYPES || FAILED(hr) || !next_type)
+        {
+          break;
+        }
+      continue;
+      }
+  }
+  for(const auto sit : supportedInputTypes)
+  {
+    GUID sourceSubtype = {};
+    RETURN_IF_FAILED(sit->GetGUID(MF_MT_SUBTYPE, &sourceSubtype));
+    UINT32 sourceFourCC = *((DWORD *)&sourceSubtype); 
+    uint8_t * fourCCbytes = (uint8_t * )&sourceFourCC;
+    printf("%c%c%c%c \n", fourCCbytes[0], fourCCbytes[1], fourCCbytes[2], fourCCbytes[3]);
 
+  }
   return 0;
 }

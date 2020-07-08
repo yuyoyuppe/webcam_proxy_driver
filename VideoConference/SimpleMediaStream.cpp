@@ -224,6 +224,12 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
       break;
     }
 
+    // DEBUG: skip all but yuy2 
+    GUID subtype{};
+    next_type->GetGUID(MF_MT_SUBTYPE, &subtype);
+    if(memcmp(&subtype, &MFVideoFormat_YUY2, sizeof GUID))
+      continue;
+
     constexpr float minimal_acceptable_framerate = 15.f;
     // Skip low frame types
     if(type_framerate(next_type) < minimal_acceptable_framerate)
@@ -239,8 +245,8 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
       supported_mtypes.emplace_back(next_type);
       max_resolution = cur_resolution_mult;
     }
-
   }
+
   // Remove all types with non-optimal resolution
   supported_mtypes.erase(std::remove_if(begin(supported_mtypes), end(supported_mtypes), [max_resolution](ComPtr<IMFMediaType> & ptr) {
     UINT32 w = 0, h = 0;
@@ -481,20 +487,20 @@ WriteSampleData(
     _In_ DWORD len
     )
 {
-    if (pBuf == nullptr)
-    {
-        return E_INVALIDARG;
-    }
-
-    const int height = len / abs(pitch);
-
-    static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", LoadedImage::Format::MJPG);
-    if(!image)
-    {
-      return E_FAIL;
-    }
-    for(int y = 0; y < height; ++y)
-      memcpy(pBuf, (const void*)&image->buffer[y * image->pitch], min(pitch, image->pitch));
+//    if (pBuf == nullptr)
+//    {
+//        return E_INVALIDARG;
+//    }
+//
+//    const int height = len / abs(pitch);
+//
+//    static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", len / height, height);
+//    if(!image)
+//    {
+//      return E_FAIL;
+//    }
+//    for(int y = 0; y < height; ++y)
+//      memcpy(pBuf, (const void*)&image->buffer[y * image->pitch], min(pitch, image->pitch));
     
     return S_OK;
 }
@@ -508,7 +514,7 @@ SimpleMediaStream::RequestSample(
     auto lock = _critSec.Lock();
     ComPtr<IMFSample> sample;
     ComPtr<IMFMediaBuffer> outputBuffer;
-    LONG pitch = IMAGE_ROW_SIZE_BYTES;
+    LONG pitch = 0;
     BYTE *bufferStart = nullptr; // not used
     DWORD bufferLength = 0;
     BYTE *pbuf = nullptr;
@@ -596,7 +602,7 @@ SimpleMediaStream::RequestSample(
       DWORD maxLength = 0;
       DWORD curLength = 0;
       outputBuffer->Lock(&outBuf, &maxLength, &curLength);
-      static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", LoadedImage::Format::MJPG);
+      static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", sampleWidth, sampleHeight);
       memcpy(outBuf, &image->buffer[0], image->buffer.size());
       outputBuffer->Unlock();
     }
