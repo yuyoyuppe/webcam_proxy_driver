@@ -107,13 +107,12 @@ int main()
   auto type = SelectBestMediaType(reader);
 
 
-  static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", 1920, 1080);
-  FILE * f{};
-  _wfopen_s(&f, LR"(R:\reencoded.jpg)", L"wb");
-  fwrite(image->buffer.data(), image->bufferSize, 1, f);
-  fclose(f);
+  static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", 320, 240);
+  //FILE * f{};
+  //_wfopen_s(&f, LR"(R:\reencoded.jpg)", L"wb");
+  //fwrite(image->buffer.data(), image->bufferSize, 1, f);
+  //fclose(f);
 
-  
   MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, MFVideoFormat_YUY2};
   //MFT_REGISTER_TYPE_INFO inputFilter = {MFMediaType_Video, };
   UINT32 unFlags = MFT_ENUM_FLAG_ALL;

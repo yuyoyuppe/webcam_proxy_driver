@@ -675,7 +675,6 @@ HRESULT CreateWICTextureFromFile(_In_ ID3D11Device * d3dDevice,
         return std::nullopt;                                                        \
     }
 
-
 std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UINT targetWidth, const UINT targetHeight)
 {
     IWICImagingFactory * pWIC = _GetWIC();
@@ -686,30 +685,29 @@ std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UI
     winrt::com_ptr<IWICBitmapDecoder> decoder;
     RETURN_IF_FAILED(pWIC->CreateDecoderFromFilename(fileName.data(), 0, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.put()));
 
-    winrt::com_ptr<IWICBitmapFrameDecode> bitmapFrame;
-    RETURN_IF_FAILED(decoder->GetFrame(0, bitmapFrame.put()));
+    winrt::com_ptr<IWICBitmapFrameDecode> decodedFrame;
+    RETURN_IF_FAILED(decoder->GetFrame(0, decodedFrame.put()));
     
     UINT imageWidth = 0, imageHeight = 0;
-    RETURN_IF_FAILED(bitmapFrame->GetSize(&imageWidth, &imageHeight));
+    RETURN_IF_FAILED(decodedFrame->GetSize(&imageWidth, &imageHeight));
     
+    winrt::com_ptr<IWICBitmapSource> sourceFrame;
     if(targetWidth != imageWidth || targetHeight != imageHeight)
     {
       winrt::com_ptr<IWICBitmapScaler> scaler;
       RETURN_IF_FAILED(pWIC->CreateBitmapScaler(scaler.put()));
-
-      winrt::com_ptr<IWICBitmapSource> sourceFrame;
-      sourceFrame.attach(scaler.get());
-
-      if(!sourceFrame || FAILED(scaler->Initialize(sourceFrame.get(), targetWidth, targetHeight, WICBitmapInterpolationModeHighQualityCubic)))
-      {
-        return std::nullopt;
-      }
+      RETURN_IF_FAILED(scaler->Initialize(decodedFrame.get(), targetWidth, targetHeight, WICBitmapInterpolationModeHighQualityCubic));
+      sourceFrame.copy_from(scaler.get());
 
       WICPixelFormatGUID pfScaler;
       RETURN_IF_FAILED(scaler->GetPixelFormat(&pfScaler));
     }
+    else
+    {
+      sourceFrame.copy_from(decodedFrame.get());
+    }
     WICPixelFormatGUID pixelFormat;
-    bitmapFrame->GetPixelFormat(&pixelFormat);
+    sourceFrame->GetPixelFormat(&pixelFormat);
     const size_t bitsPerPixel = _WICBitsPerPixel(pixelFormat);
 
     winrt::com_ptr<IWICBitmapEncoder> encoder;
@@ -725,7 +723,7 @@ std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UI
     WICPixelFormatGUID jpgFormat = GUID_WICPixelFormat24bppBGR;
     RETURN_IF_FAILED(jpgFrame->SetPixelFormat(&jpgFormat));
     RETURN_IF_FAILED(jpgFrame->SetSize(targetWidth, targetHeight));
-    RETURN_IF_FAILED(jpgFrame->WriteSource(bitmapFrame.get(), nullptr));
+    RETURN_IF_FAILED(jpgFrame->WriteSource(sourceFrame.get(), nullptr));
     RETURN_IF_FAILED(jpgFrame->Commit());
     RETURN_IF_FAILED(encoder->Commit());
 
@@ -741,169 +739,4 @@ std::optional<LoadedMJPG> LoadImageFromFile(std::wstring_view fileName, const UI
 
     LoadedMJPG result{.buffer = std::move(buffer), .bufferSize = jpgStreamSize, .width = imageWidth, .height = imageHeight};
     return std::optional<LoadedMJPG>{std::move(result)};
-
-    
-    //GUID sourceFormat = {};
-    //decoder->GetContainerFormat(&sourceFormat);
-    //if(!memcmp(&sourceFormat, &GUID_ContainerFormatJpeg, sizeof(GUID)) && targetFormat == LoadedImage::Format::MJPG)
-    //{
-    //  // Special case, we just read the whole file
-    //  FILE * f{};
-    //  _wfopen_s(&f, fileName.data(), L"rb");
-    //  fseek(f, 0L, SEEK_END);
-    //  const long filesize = ftell(f);
-    //  rewind(f);
-    //  std::vector<uint8_t> buffer;
-    //  buffer.resize(filesize);
-
-    //  fread(buffer.data(), filesize, 1, f);
-    //  fclose(f);
-
-    //  LoadedImage result{.buffer = std::move(buffer), .pitch = imageWidth * 3, .bpp = 24, .width = imageWidth, .height = imageHeight, .format = targetFormat};
-    //  return std::optional<LoadedImage>{std::move(result)};
-    //}
-
-    //const auto wicIntermediateFormat = GUID_WICPixelFormat24bppRGB;
-    //const DXGI_FORMAT intermediateFormat = _WICToDXGI(wicIntermediateFormat);
-
-    //// Format conversion but no resize
-    //winrt::com_ptr<IWICFormatConverter> FC;
-    //if(FAILED(pWIC->CreateFormatConverter(FC.put())))
-    //{
-    //    return std::nullopt;
-    //}
-
-    //if(FAILED(FC->Initialize(bitmapFrame.get(), wicIntermediateFormat, WICBitmapDitherTypeErrorDiffusion, 0, 0, WICBitmapPaletteTypeCustom)))
-    //{
-    //    return std::nullopt;
-    //}
-
-    //UINT rowPitch = (imageWidth * bitsPerPixel + 7) / 8;
-    //const UINT imageSize = rowPitch * imageHeight;
-    //std::vector<uint8_t> buffer;
-    //buffer.resize(imageSize);
-
-    //if(FAILED(FC->CopyPixels(0, static_cast<UINT>(rowPitch), static_cast<UINT>(imageSize), buffer.data())))
-    //{
-    //  return std::nullopt;
-    //}
-    ///*
-    //switch(targetFormat)
-    //{
-    //case LoadedImage::Format::NV12:
-    //{
-    //  for(UINT y = 0; y < imageHeight; ++y)
-    //  {
-    //    for(UINT x = 0; x < imageWidth; x += 3)
-    //    {
-    //      const int16_t r = buffer[y * rowPitch + x + 0];
-    //      const int16_t g = buffer[y * rowPitch + x + 1];
-    //      const int16_t b = buffer[y * rowPitch + x + 2];
-    //      buffer[y * rowPitch + x + 0] = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-    //      buffer[y * rowPitch + x + 1] = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
-    //      buffer[y * rowPitch + x + 2] = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
-    //    }
-    //  }
-    //  for(DWORD y = 0; y < (imageHeight - 3); y += 6)
-    //  {
-    //    for(DWORD x = 0; x < (imageWidth - 3); x += 6)
-    //    {
-    //      float uSum = 0;
-    //      float vSum = 0;
-
-    //      // add up the U and V portions of every pixel
-    //      
-    //      uSum = (float)(buffer[y * rowPitch + x + 1] + 
-    //                     buffer[y * rowPitch + x + 4] + 
-    //                     buffer[(1 + y) * rowPitch + x + 1] + 
-    //                     buffer[(1 + y) * rowPitch + x + 4]);
-    //      
-    //      vSum = (float)(buffer[y * rowPitch + x + 2] + 
-    //                     buffer[y * rowPitch + x + 5] + 
-    //                     buffer[(1 + y) * rowPitch + x + 5] + 
-    //                     buffer[(1 + y) * rowPitch + x + 5]);
-
-    //      // Since a single chroma value for 4:2:0 format represents four pixels
-    //      // at once (the same color is used for every four pixels) set the chroma
-    //      // values of all of the pixels to the calculated average.
-    //      
-    //      buffer[y * rowPitch + x + 4] = 
-    //        buffer[(1 + y) * rowPitch + x + 1] = 
-    //        buffer[(1 + y) * rowPitch + x + 5] = 
-    //        buffer[y * rowPitch + x + 1] = 
-    //        (uint8_t)(uSum / 4);
-
-    //      buffer[y * rowPitch + x + 5] = 
-    //        buffer[(1 + y) * rowPitch + x + 2] =
-    //        buffer[(1 + y) * rowPitch + x + 5] =
-    //        buffer[y * rowPitch + x + 2] =
-    //        (uint8_t)(vSum / 4);
-    //    }
-    //  }
-    //}
-    //case LoadedImage::Format::YUY2:
-    //{
-    //  for(UINT y = 0; y < imageHeight; ++y)
-    //  {
-    //    for(UINT x = 0; x < imageWidth; x += 3)
-    //    {
-    //      const int16_t r = buffer[y * rowPitch + x + 0];
-    //      const int16_t g = buffer[y * rowPitch + x + 1];
-    //      const int16_t b = buffer[y * rowPitch + x + 2];
-    //      buffer[y * rowPitch + x + 0] = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
-    //      buffer[y * rowPitch + x + 1] = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
-    //      buffer[y * rowPitch + x + 2] = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
-    //    }
-    //  }
-    //  for(DWORD y = 0; y < (imageHeight - 3); y += 6)
-    //  {
-    //    for(DWORD x = 0; x < (imageWidth - 3); x += 6)
-    //    {
-    //      float uSum = 0;
-    //      float vSum = 0;
-
-    //      // add up the U and V portions of every pixel
-
-    //      uSum = (float)(buffer[y * rowPitch + x + 1] +
-    //        buffer[y * rowPitch + x + 4] +
-    //        buffer[(1 + y) * rowPitch + x + 1] +
-    //        buffer[(1 + y) * rowPitch + x + 4]);
-
-    //      vSum = (float)(buffer[y * rowPitch + x + 2] +
-    //        buffer[y * rowPitch + x + 5] +
-    //        buffer[(1 + y) * rowPitch + x + 5] +
-    //        buffer[(1 + y) * rowPitch + x + 5]);
-
-    //      // Since a single chroma value for 4:2:0 format represents four pixels
-    //      // at once (the same color is used for every four pixels) set the chroma
-    //      // values of all of the pixels to the calculated average.
-
-    //      buffer[y * rowPitch + x + 4] =
-    //        buffer[(1 + y) * rowPitch + x + 1] =
-    //        buffer[(1 + y) * rowPitch + x + 5] =
-    //        buffer[y * rowPitch + x + 1] =
-    //        (uint8_t)(uSum / 4);
-
-    //      buffer[y * rowPitch + x + 5] =
-    //        buffer[(1 + y) * rowPitch + x + 2] =
-    //        buffer[(1 + y) * rowPitch + x + 5] =
-    //        buffer[y * rowPitch + x + 2] =
-    //        (uint8_t)(vSum / 4);
-    //    }
-    //  }
-    //}
-    //}
-    //*/
-
-    //LoadedMJPG result {.buffer = std::move(buffer), .pitch = rowPitch, .bpp = bitsPerPixel, .width = imageWidth, .height = imageHeight};
-    //return std::optional<LoadedMJPG>{std::move(result)};
 }
-
-//
-//void ConverToYUV(LoadedImage & image)
-//{
-//  auto rgb_to_yuv = [fmt = image.format](uint8_t & pixel){
-//
-//  };
-//
-//}
