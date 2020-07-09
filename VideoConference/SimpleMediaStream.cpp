@@ -208,9 +208,9 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
   std::vector<ComPtr<IMFMediaType>> supported_mtypes;
 
   auto type_framerate = [](IMFMediaType * type) {
-    UINT32 framerate_num = 0, framerate_denum = 1;
-    MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &framerate_num, &framerate_denum);
-    const float framerate = static_cast<float>(framerate_num) / framerate_denum;
+    UINT32 framerateNum = 0, framerateDenum = 1;
+    MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &framerateNum, &framerateDenum);
+    const float framerate = static_cast<float>(framerateNum) / framerateDenum;
     return framerate;
   };
 
@@ -514,9 +514,8 @@ SimpleMediaStream::RequestSample(
     _In_ IUnknown *pToken
     )
 {
-    HRESULT hr = S_OK;
     auto lock = _critSec.Lock();
-
+    HRESULT hr{};
     RETURN_IF_FAILED (_CheckShutdownRequiresLock());
 
     const auto nDevices = _devices.Count();
@@ -525,40 +524,17 @@ SimpleMediaStream::RequestSample(
 
     ComPtr<IMFSample> sample;
     DWORD streamFlags = 0;
-    // TODO: handle many failed tries etc.
-    while(!sample)
-    {
-      hr = m_pReader->ReadSample(
+
+    hr = m_pReader->ReadSample(
       (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
       0,
-      NULL,
+      nullptr,
       &streamFlags,
-      NULL,
+      nullptr,
       &sample);
-      Sleep(200);
-    }
-
-    // Debug: save frame to a file for further inspection.
-    //static bool raw_source_saved = false;
-    //if(!raw_source_saved)
-    //{
-    //  ComPtr<IMFMediaBuffer> buf;
-    //  RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &buf));
-    //  BYTE * buff = nullptr;
-    //  DWORD max_length = 0, current_length = 0;
-    //  RETURN_IF_FAILED(buf->Lock(&buff, &max_length, &current_length));
-    //  FILE * f = nullptr;
-    //  fopen_s(&f, R"(R:\meh.jpg)", "wb");
-    //  fwrite(buff, current_length, 1, f);
-    //  fclose(f);
-    //  RETURN_IF_FAILED(buf->Unlock());
-    //  RETURN_IF_FAILED(buf->SetCurrentLength(current_length));
-    //  raw_source_saved = true;
-    //}
-
-    if (pToken != nullptr)
+    if(FAILED(hr))
     {
-        RETURN_IF_FAILED (sample->SetUnknown(MFSampleExtension_Token, pToken));
+      return hr;
     }
 
     const wchar_t shmemEndpoint[] = L"Global\\PowerToysWebcamMuteSwitch";
@@ -569,7 +545,7 @@ SimpleMediaStream::RequestSample(
 
       InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
 
-      SetSecurityDescriptorDacl(&sd, true, 0, false);
+      SetSecurityDescriptorDacl(&sd, true, nullptr, false);
 
       SECURITY_ATTRIBUTES sa;
       sa.nLength = sizeof(sa);
@@ -600,15 +576,34 @@ SimpleMediaStream::RequestSample(
     static auto imageSample = LoadImageAsSample(LR"(P:\wecam_test_1920.jpg)", _spMediaType.Get());
 
     IMFSample * outputSample = disableWebcam? imageSample.Get() : sample.Get();
+    const bool noSampleAvailable = !outputSample;
+
+    if(noSampleAvailable)
+    {
+      // Create an empty sample
+      RETURN_IF_FAILED(MFCreateSample(&outputSample));
+    }
     RETURN_IF_FAILED(outputSample->SetSampleTime(MFGetSystemTime()));
     RETURN_IF_FAILED(outputSample->SetSampleDuration(333333));
+    if(pToken != nullptr)
+    {
+      RETURN_IF_FAILED(outputSample->SetUnknown(MFSampleExtension_Token, pToken));
+    }
+
+    if(noSampleAvailable)
+    {
+      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEStreamTick,
+        GUID_NULL,
+        S_OK,
+        nullptr));
+    }
 
     RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
       GUID_NULL,
       S_OK,
       outputSample));
 
-    return hr;
+    return S_OK;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////
