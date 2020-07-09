@@ -224,10 +224,10 @@ ComPtr<IMFMediaType> SelectBestMediaType(IMFSourceReader * reader)
        break;
     }
     // DEBUG: skip all but yuy2 
-    GUID subtype{};
-    next_type->GetGUID(MF_MT_SUBTYPE, &subtype);
-    if(memcmp(&subtype, &MFVideoFormat_YUY2, sizeof GUID))
-      continue;
+    //GUID subtype{};
+    //next_type->GetGUID(MF_MT_SUBTYPE, &subtype);
+    //if(memcmp(&subtype, &MFVideoFormat_YUY2, sizeof GUID))
+    //  continue;
 
     constexpr float minimal_acceptable_framerate = 15.f;
     // Skip low frame types
@@ -516,43 +516,17 @@ SimpleMediaStream::RequestSample(
 {
     HRESULT hr = S_OK;
     auto lock = _critSec.Lock();
-    ComPtr<IMFSample> sample;
-    ComPtr<IMFMediaBuffer> outputBuffer;
-    LONG pitch = 0;
-    BYTE *bufferStart = nullptr; // not used
-    DWORD bufferLength = 0;
-    BYTE *pbuf = nullptr;
-    ComPtr<IMF2DBuffer2> buffer2D;
 
     RETURN_IF_FAILED (_CheckShutdownRequiresLock());
 
     const auto nDevices = _devices.Count();
 
-
-
-    // Create the sink writer
-    //if (SUCCEEDED(hr))
-    //{
-    //    hr = MFCreateSinkWriterFromURL(
-    //        pwszFileName,
-    //        NULL,
-    //        NULL,
-    //        &m_pWriter);
-    //}
-
-    // Set up the encoding parameters.
-    if(SUCCEEDED(hr))
-    {
-      //hr = ConfigureCapture(param);
-    }
-
-
     // Request the first video frame.
 
-    ComPtr<IMFSample> sourceSample;
+    ComPtr<IMFSample> sample;
     DWORD streamFlags = 0;
     // TODO: handle many failed tries etc.
-    while(!sourceSample)
+    while(!sample)
     {
       hr = m_pReader->ReadSample(
       (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
@@ -560,7 +534,7 @@ SimpleMediaStream::RequestSample(
       NULL,
       &streamFlags,
       NULL,
-      &sourceSample);
+      &sample);
       Sleep(200);
     }
 
@@ -582,49 +556,6 @@ SimpleMediaStream::RequestSample(
     //  raw_source_saved = true;
     //}
 
-    ComPtr<IMFMediaBuffer> sourceSampleBuffer;
-    RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &sourceSampleBuffer));
-    GUID sourceSubtype = {};
-    RETURN_IF_FAILED(_spMediaType->GetGUID(MF_MT_SUBTYPE, &sourceSubtype));
-    UINT32 sourceFourCC = *((DWORD*)&sourceSubtype);
-
-    RETURN_IF_FAILED (MFCreateSample(&sample));
-    UINT32 sampleWidth = 0;
-    UINT32 sampleHeight = 0;
-    MFGetAttributeSize(_spMediaType.Get(), MF_MT_FRAME_SIZE, &sampleWidth, &sampleHeight);
-
-    RETURN_IF_FAILED (MFCreate2DMediaBuffer(sampleWidth,
-                                            sampleHeight,
-                                            (D3DFORMAT)sourceFourCC,
-                                            false,
-                                            &outputBuffer));
-
-    if(!memcmp(&sourceSubtype, &MFVideoFormat_MJPG, sizeof(GUID)))
-    {
-      // It's MJPG, so we do not copy line by line and copy the whole buffer at once
-      BYTE * outBuf = nullptr;
-      DWORD maxLength = 0;
-      DWORD curLength = 0;
-      outputBuffer->Lock(&outBuf, &maxLength, &curLength);
-      //static const auto image = LoadImageAsSample(LR"(P:\wecam_test_1920.jpg)", sampleWidth, sampleHeight);
-      //memcpy(outBuf, &image->buffer[0], image->buffer.size());
-      //outputBuffer->Unlock();
-    }
-    else
-    {
-      RETURN_IF_FAILED (outputBuffer.As(&buffer2D));
-      RETURN_IF_FAILED (buffer2D->Lock2DSize(MF2DBuffer_LockFlags_Write,
-                                             &pbuf,
-                                             &pitch,
-                                             &bufferStart,
-                                             &bufferLength));
-      RETURN_IF_FAILED (WriteSampleData(pbuf, pitch, bufferLength));
-      RETURN_IF_FAILED (buffer2D->Unlock2D());
-    }
-    
-    RETURN_IF_FAILED (sample->AddBuffer(outputBuffer.Get()));
-    RETURN_IF_FAILED (sample->SetSampleTime(MFGetSystemTime()));
-    RETURN_IF_FAILED (sample->SetSampleDuration(333333));
     if (pToken != nullptr)
     {
         RETURN_IF_FAILED (sample->SetUnknown(MFSampleExtension_Token, pToken));
@@ -666,50 +597,16 @@ SimpleMediaStream::RequestSample(
 
     const bool disableWebcam = noiseToggle && *noiseToggle;
 
-    if(!disableWebcam && sourceSample)
-    {
-      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
-        GUID_NULL,
-        S_OK,
-        sourceSample.Get()));
-    }
-    else if(sourceSample)
-    {
-      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
-        GUID_NULL,
-        S_OK,
-        sample.Get()));
+    static auto imageSample = LoadImageAsSample(LR"(P:\wecam_test_1920.jpg)", _spMediaType.Get());
 
-      // Noise for debugging
-      /*ComPtr<IMFMediaBuffer> buf; 
-      RETURN_IF_FAILED(sourceSample->GetBufferByIndex(0, &buf));
-      BYTE * buff = nullptr;
-      DWORD max_length = 0, current_length = 0;
-      RETURN_IF_FAILED(buf->Lock(&buff, &max_length, &current_length));
-      static DWORD strt = 500;
-      static DWORD length = 10;
-      for(DWORD i = strt; i < current_length && i < (strt + length); ++i)
-      {
-        if(i % 4 == 0)
-        {
-          buff[i] = rand() % 255;
-        }
-      }
-      RETURN_IF_FAILED(buf->Unlock());
-      RETURN_IF_FAILED(buf->SetCurrentLength(current_length));
-      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
-        GUID_NULL,
-        S_OK,
-        sourceSample.Get()));*/
-    }
-    else
-    {
-      RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
-        GUID_NULL,
-        S_OK,
-        sample.Get()));
-    }
-    
+    IMFSample * outputSample = disableWebcam? imageSample.Get() : sample.Get();
+    RETURN_IF_FAILED(outputSample->SetSampleTime(MFGetSystemTime()));
+    RETURN_IF_FAILED(outputSample->SetSampleDuration(333333));
+
+    RETURN_IF_FAILED(_spEventQueue->QueueEventParamUnk(MEMediaSample,
+      GUID_NULL,
+      S_OK,
+      outputSample));
 
     return hr;
 }

@@ -89,9 +89,6 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
       RETURN_IF_FAILED(pWIC->CreateBitmapScaler(&scaler));
       RETURN_IF_FAILED(scaler->Initialize(decodedFrame.Get(), targetWidth, targetHeight, WICBitmapInterpolationModeHighQualityCubic));
       sourceImageFrame.Attach(scaler.Detach());
-
-      WICPixelFormatGUID pfScaler;
-      RETURN_IF_FAILED(scaler->GetPixelFormat(&pfScaler));
     }
     else
     {
