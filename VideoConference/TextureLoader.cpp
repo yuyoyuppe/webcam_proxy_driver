@@ -22,7 +22,7 @@
 
 #pragma optimize("", off) // TODO: also disable exceptions
 
-static IWICImagingFactory * _GetWIC()
+IWICImagingFactory * _GetWIC()
 {
   static IWICImagingFactory * s_Factory = nullptr;
 
@@ -73,10 +73,10 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
     
     // Initialize image bitmap decoder from filename and get the image frame
     ComPtr<IWICBitmapDecoder> bitmapDecoder;
-    RETURN_IF_FAILED(pWIC->CreateDecoderFromFilename(fileName.data(), 0, GENERIC_READ, WICDecodeMetadataCacheOnDemand, bitmapDecoder.GetAddressOf()));
+    RETURN_IF_FAILED(pWIC->CreateDecoderFromFilename(fileName.data(), 0, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &bitmapDecoder));
 
     ComPtr<IWICBitmapFrameDecode> decodedFrame;
-    RETURN_IF_FAILED(bitmapDecoder->GetFrame(0, decodedFrame.GetAddressOf()));
+    RETURN_IF_FAILED(bitmapDecoder->GetFrame(0, &decodedFrame));
     
     UINT imageWidth = 0, imageHeight = 0;
     RETURN_IF_FAILED(decodedFrame->GetSize(&imageWidth, &imageHeight));
@@ -86,29 +86,29 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
     if(targetWidth != imageWidth || targetHeight != imageHeight)
     {
       ComPtr<IWICBitmapScaler> scaler;
-      RETURN_IF_FAILED(pWIC->CreateBitmapScaler(scaler.GetAddressOf()));
+      RETURN_IF_FAILED(pWIC->CreateBitmapScaler(&scaler));
       RETURN_IF_FAILED(scaler->Initialize(decodedFrame.Get(), targetWidth, targetHeight, WICBitmapInterpolationModeHighQualityCubic));
-      sourceImageFrame.Attach(scaler.Get());
+      sourceImageFrame.Attach(scaler.Detach());
 
       WICPixelFormatGUID pfScaler;
       RETURN_IF_FAILED(scaler->GetPixelFormat(&pfScaler));
     }
     else
     {
-      sourceImageFrame.Attach(decodedFrame.Get());
+      sourceImageFrame.Attach(decodedFrame.Detach());
     }
 
     // We need to encode the image as jpg, since it's always supported by MT video decoders and could be converted to
     // other formats
     ComPtr<IWICBitmapEncoder> jpgEncoder;
-    RETURN_IF_FAILED(pWIC->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, jpgEncoder.GetAddressOf()));
+    RETURN_IF_FAILED(pWIC->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, &jpgEncoder));
     
     // Prepare the encoder output memory stream and encoding params
     ComPtr<IStream> jpgStream;
-    RETURN_IF_FAILED(CreateStreamOnHGlobal(nullptr, true, jpgStream.GetAddressOf()));
+    RETURN_IF_FAILED(CreateStreamOnHGlobal(nullptr, true, &jpgStream));
     RETURN_IF_FAILED(jpgEncoder->Initialize(jpgStream.Get(), WICBitmapEncoderNoCache));
     ComPtr<IWICBitmapFrameEncode> jpgFrame;
-    RETURN_IF_FAILED(jpgEncoder->CreateNewFrame(jpgFrame.GetAddressOf(), nullptr));
+    RETURN_IF_FAILED(jpgEncoder->CreateNewFrame(&jpgFrame, nullptr));
     RETURN_IF_FAILED(jpgFrame->Initialize(nullptr));
     
     WICPixelFormatGUID jpgFormat = GUID_WICPixelFormat24bppBGR;
@@ -156,10 +156,9 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
     MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, {}};
     RETURN_IF_FAILED(sampleMediaType->GetGUID(MF_MT_SUBTYPE, &outputFilter.guidSubtype));
 
-    //if(!(reinterpret_cast<uintptr_t>(&inputFilter) & 0x1)) return nullptr; // TODO: DEBUG ONLY
-
     IMFActivate ** ppActivate = nullptr;
     UINT32 count = 0;
+    bitmapDecoder = nullptr;
 
     RETURN_IF_FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SYNCMFT, &inputFilter, &outputFilter, &ppActivate, &count));
     ComPtr<IMFTransform> decoder;
@@ -228,5 +227,5 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
       outputSamples.pEvents->Release();
     }
     MFShutdownObject(decoder.Get());
-    return ComPtr<IMFSample>{outputSamples.pSample};
+    return outputSamples.pSample;
 }
