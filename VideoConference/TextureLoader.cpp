@@ -149,38 +149,41 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
     RETURN_IF_FAILED(inputMediaBuffer->SetCurrentLength(static_cast<DWORD>(jpgStreamSize)));
     RETURN_IF_FAILED(inputSample->AddBuffer(inputMediaBuffer));
 
-    // TODO: check if we don't need to convert it and just return (or possibly w/ also setting attrs)
-
     // Now we are ready to convert it to the requested media type, so we need to find a suitable jpg encoder
     MFT_REGISTER_TYPE_INFO inputFilter = {MFMediaType_Video, MFVideoFormat_MJPG};
     MFT_REGISTER_TYPE_INFO outputFilter = {MFMediaType_Video, {}};
     RETURN_IF_FAILED(sampleMediaType->GetGUID(MF_MT_SUBTYPE, &outputFilter.guidSubtype));
 
-    IMFActivate ** ppActivate = nullptr;
+    // But if no conversion is needed, just return the input sample
+    if(!memcmp(&inputFilter.guidSubtype, &outputFilter.guidSubtype, sizeof(GUID)))
+    {
+      return inputSample;
+    }
+
+    IMFActivate ** ppVDActivate = nullptr;
     UINT32 count = 0;
-    bitmapDecoder = nullptr;
 
-    RETURN_IF_FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SYNCMFT, &inputFilter, &outputFilter, &ppActivate, &count));
-    ComPtr<IMFTransform> decoder;
+    RETURN_IF_FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SYNCMFT, &inputFilter, &outputFilter, &ppVDActivate, &count));
+    ComPtr<IMFTransform> videoDecoder;
 
-    bool decoderActivated = false;
+    bool videoDecoderActivated = false;
     for(UINT32 i = 0; i < count; ++i)
     {
-      if(!decoderActivated && !FAILED(ppActivate[i]->ActivateObject(IID_PPV_ARGS(&decoder))))
+      if(!videoDecoderActivated && !FAILED(ppVDActivate[i]->ActivateObject(IID_PPV_ARGS(&videoDecoder))))
       {
-        decoderActivated = true;
+        videoDecoderActivated = true;
       }
-      ppActivate[i]->Release();
+      ppVDActivate[i]->Release();
     }
     if(count)
     {
-      CoTaskMemFree(ppActivate);
+      CoTaskMemFree(ppVDActivate);
     }
-    if(!decoderActivated)
+    if(!videoDecoderActivated)
     {
       return nullptr;
     }
-
+    auto shutdownVideoDecoder = wil::scope_exit([&videoDecoder]{ MFShutdownObject(videoDecoder.Get()); });
     // Set input/output types for the decoder
     ComPtr<IMFMediaType> jpgFrameMediaType;
     RETURN_IF_FAILED(MFCreateMediaType(&jpgFrameMediaType));
@@ -190,15 +193,15 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
     RETURN_IF_FAILED(jpgFrameMediaType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     RETURN_IF_FAILED(MFSetAttributeSize(jpgFrameMediaType.Get(), MF_MT_FRAME_SIZE, targetWidth, targetHeight));
     RETURN_IF_FAILED(MFSetAttributeRatio(jpgFrameMediaType.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
-    RETURN_IF_FAILED(decoder->SetInputType(0, jpgFrameMediaType.Get(), 0));
-    RETURN_IF_FAILED(decoder->SetOutputType(0, sampleMediaType, 0));
+    RETURN_IF_FAILED(videoDecoder->SetInputType(0, jpgFrameMediaType.Get(), 0));
+    RETURN_IF_FAILED(videoDecoder->SetOutputType(0, sampleMediaType, 0));
 
     // Process the input sample
-    RETURN_IF_FAILED(decoder->ProcessInput(0, inputSample.Get(), 0));
+    RETURN_IF_FAILED(videoDecoder->ProcessInput(0, inputSample.Get(), 0));
 
     // Check whether we need to allocate output sample and buffer ourselves
     MFT_OUTPUT_STREAM_INFO outputStreamInfo{};
-    RETURN_IF_FAILED(decoder->GetOutputStreamInfo(0, &outputStreamInfo));
+    RETURN_IF_FAILED(videoDecoder->GetOutputStreamInfo(0, &outputStreamInfo));
     const bool onlyProvidesSamples = outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
     const bool canProvideSamples = outputStreamInfo.dwFlags & MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES;
     const bool mustAllocateSample = (!onlyProvidesSamples && !canProvideSamples)
@@ -221,11 +224,10 @@ ComPtr<IMFSample> LoadImageAsSample(std::wstring_view fileName, IMFMediaType * s
 
     // Finally, produce the output sample 
     DWORD processStatus = 0;
-    RETURN_IF_FAILED(decoder->ProcessOutput(0, 1, &outputSamples, &processStatus));
+    RETURN_IF_FAILED(videoDecoder->ProcessOutput(0, 1, &outputSamples, &processStatus));
     if(outputSamples.pEvents)
     {
       outputSamples.pEvents->Release();
     }
-    MFShutdownObject(decoder.Get());
     return outputSamples.pSample;
 }
