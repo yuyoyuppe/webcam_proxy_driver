@@ -6,12 +6,13 @@ class SimpleMediaSource;
 
 class DeviceList
 {
-  UINT32 m_cDevices;
+  UINT32 m_numberDevices;
   IMFActivate ** m_ppDevices;
+  wchar_t ** m_deviceFriendlyNames;
 
 public:
   DeviceList() :
-    m_ppDevices(NULL), m_cDevices(0)
+    m_ppDevices(NULL), m_numberDevices(0)
   {
   }
   ~DeviceList()
@@ -19,12 +20,12 @@ public:
     Clear();
   }
 
-  UINT32 Count() const { return m_cDevices; }
+  UINT32 Count() const { return m_numberDevices; }
 
   void Clear();
   HRESULT EnumerateDevices();
   HRESULT GetDevice(UINT32 index, IMFActivate ** ppActivate);
-  HRESULT GetDeviceName(UINT32 index, WCHAR ** ppszName);
+  std::wstring_view GetDeviceName(UINT32 index);
 };
 
 

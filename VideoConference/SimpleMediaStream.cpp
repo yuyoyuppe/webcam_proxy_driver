@@ -22,14 +22,16 @@ void SafeRelease(T ** ppT)
 
 void DeviceList::Clear()
 {
-  for(UINT32 i = 0; i < m_cDevices; i++)
+  for(UINT32 i = 0; i < m_numberDevices; i++)
   {
+    CoTaskMemFree(m_deviceFriendlyNames[i]);
     SafeRelease(&m_ppDevices[i]);
   }
   CoTaskMemFree(m_ppDevices);
-  m_ppDevices = NULL;
-
-  m_cDevices = 0;
+  m_ppDevices = nullptr;
+  delete[] m_deviceFriendlyNames;
+  m_deviceFriendlyNames = nullptr;
+  m_numberDevices = 0;
 }
 
 HRESULT DeviceList::EnumerateDevices()
@@ -55,7 +57,14 @@ HRESULT DeviceList::EnumerateDevices()
   // Enumerate devices.
   if(SUCCEEDED(hr))
   {
-    hr = MFEnumDeviceSources(pAttributes, &m_ppDevices, &m_cDevices);
+    hr = MFEnumDeviceSources(pAttributes, &m_ppDevices, &m_numberDevices);
+  }
+
+  m_deviceFriendlyNames = new(std::nothrow)wchar_t*[m_numberDevices];
+  for(UINT32 i = 0; i < m_numberDevices; i++)
+  {
+      UINT32 nameLength = 0;
+      m_ppDevices[i]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &m_deviceFriendlyNames[i], &nameLength);
   }
 
   SafeRelease(&pAttributes);
@@ -76,21 +85,14 @@ HRESULT DeviceList::GetDevice(UINT32 index, IMFActivate ** ppActivate)
   return S_OK;
 }
 
-HRESULT DeviceList::GetDeviceName(UINT32 index, WCHAR ** ppszName)
+std::wstring_view DeviceList::GetDeviceName(UINT32 index)
 {
   if(index >= Count())
   {
-    return E_INVALIDARG;
+    return {};
   }
 
-  HRESULT hr = S_OK;
-
-  hr = m_ppDevices[index]->GetAllocatedString(
-    MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
-    ppszName,
-    NULL);
-
-  return hr;
+  return m_deviceFriendlyNames[index];
 }
 
 //-------------------------------------------------------------------
@@ -471,42 +473,6 @@ SimpleMediaStream::GetStreamDescriptor(
     }
 
     return hr;
-}
-
-/*
-   Writes to a buffer representing a 2D image.
-   Writes a different constant to each line based on row number and current time.
-
-   Assumes top down image, no negative stride and pBuf points to the begnning of the buffer of length len.
-
-   Param:
-   pBuf - pointer to beginning of buffer
-   pitch - line length in bytes
-   len - length of buffer in bytes
-*/
-HRESULT
-WriteSampleData(
-    _Inout_updates_bytes_(len) BYTE *pBuf,
-    _In_ LONG pitch,
-    _In_ DWORD len
-    )
-{
-//    if (pBuf == nullptr)
-//    {
-//        return E_INVALIDARG;
-//    }
-//
-//    const int height = len / abs(pitch);
-//
-//    static const auto image = LoadImageFromFile(LR"(P:\wecam_test_1920.jpg)", len / height, height);
-//    if(!image)
-//    {
-//      return E_FAIL;
-//    }
-//    for(int y = 0; y < height; ++y)
-//      memcpy(pBuf, (const void*)&image->buffer[y * image->pitch], min(pitch, image->pitch));
-    
-    return S_OK;
 }
 
 IFACEMETHODIMP

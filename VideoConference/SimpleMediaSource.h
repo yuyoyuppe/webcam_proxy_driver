@@ -4,8 +4,7 @@
 
 class SimpleMediaStream;
 
-// TODO: check if it's possible to get this object from MFGetService
-class __declspec(uuid("{9812588D-5CE9-4E4C-ABC1-049138D10DCE}")) // TODO: change GUIDs to something else
+class __declspec(uuid("{8a6954dc-7baa-486b-a7a3-a3cc09246487}"))
 SimpleMediaSource : public RuntimeClass<
     RuntimeClassFlags<WinRtClassicComMix>,
     IMFMediaEventGenerator,

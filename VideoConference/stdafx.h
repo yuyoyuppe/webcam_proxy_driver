@@ -34,6 +34,8 @@
 #include <Dbt.h>
 #include <shlwapi.h>
 
+#include <string_view>
+
 using namespace Microsoft::WRL;
 using namespace Microsoft::WRL::Wrappers;
 

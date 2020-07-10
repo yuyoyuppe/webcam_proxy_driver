@@ -22,6 +22,8 @@ int main()
   IMFActivate * activate = nullptr;
   dl.GetDevice(0, &activate);
 
+  auto name = dl.GetDeviceName(0);
+
   IMFMediaSource * pSource = nullptr;
 
   // Create the media source for the device.
